@@ -1,0 +1,359 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* RESET */
+* {
+        box-sizing: border-box;
+        padding: 0;
+        margin: 0;
+}
+
+:root {
+  /* LeetCode specific colors */
+  --dark-layer-1: hsl(0, 0%, 15.7%);
+  --dark-layer-2: hsl(0, 0%, 10.2%);
+  --dark-label-2: hsla(239, 15%, 95%, 0.75);
+  --dark-divider-border-2: hsl(0, 0%, 23.9%);
+  --dark-fill-2: hsla(0, 0%, 100%, 0.14);
+  --dark-fill-3: hsla(0, 0%, 100%, 0.1);
+  --dark-gray-6: hsl(0, 0%, 54.1%);
+  --dark-gray-7: hsl(0, 0%, 70.2%);
+  --gray-8: hsl(0, 0%, 14.9%);
+  --dark-gray-8: hsl(0, 0%, 85.9%);
+  --brand-orange: hsl(32, 100%, 54.3%);
+  --brand-orange-s: hsl(32, 86%, 40.8%);
+  --dark-yellow: hsl(48, 100%, 55.9%);
+  --dark-pink: hsl(342, 100%, 60.8%);
+  --olive: hsl(177, 100%, 36.1%);
+  --dark-green-s: hsl(142, 62%, 45.3%);
+  --dark-blue-s: hsl(218, 100%, 52%);
+
+  /* Base colors */
+  --background: hsl(0, 0%, 10.2%);
+  --foreground: hsl(0, 0%, 85.9%);
+  --card: hsl(0, 0%, 15.7%);
+  --card-foreground: hsl(0, 0%, 85.9%);
+  --popover: hsl(0, 0%, 10.2%);
+  --popover-foreground: hsl(0, 0%, 85.9%);
+  --primary: hsl(32, 100%, 54.3%);
+  --primary-foreground: hsl(0, 0%, 9%);
+  --secondary: hsl(0, 0%, 23.9%);
+  --secondary-foreground: hsl(0, 0%, 85.9%);
+  --muted: hsl(0, 0%, 15%);
+  --muted-foreground: hsl(0, 0%, 54%);
+  --accent: hsl(32, 100%, 54.3%);
+  --accent-foreground: hsl(0, 0%, 9%);
+  --destructive: hsl(342, 100%, 60.8%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --border: hsl(0, 0%, 23.9%);
+  --input: hsl(0, 0%, 23.9%);
+  --ring: hsl(32, 100%, 54.3%);
+  
+  /* Chart colors */
+  --chart-1: hsl(32, 100%, 54.3%);
+  --chart-2: hsl(177, 100%, 36.1%);
+  --chart-3: hsl(48, 100%, 55.9%);
+  --chart-4: hsl(142, 62%, 45.3%);
+  --chart-5: hsl(342, 100%, 60.8%);
+  
+  /* Sidebar colors */
+  --sidebar-background: hsl(0, 0%, 15.7%);
+  --sidebar-foreground: hsl(0, 0%, 85.9%);
+  --sidebar-primary: hsl(32, 100%, 54.3%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent: hsl(32, 100%, 54.3%);
+  --sidebar-accent-foreground: hsl(0, 0%, 9%);
+  --sidebar-border: hsl(0, 0%, 23.9%);
+  --sidebar-ring: hsl(32, 100%, 54.3%);
+  
+  /* Font families */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: "Fira Code", ui-monospace, monospace;
+  
+  /* Other properties */
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: hsl(0, 0%, 10.2%);
+  --foreground: hsl(0, 0%, 85.9%);
+  --card: hsl(0, 0%, 15.7%);
+  --card-foreground: hsl(0, 0%, 85.9%);
+  --popover: hsl(0, 0%, 10.2%);
+  --popover-foreground: hsl(0, 0%, 85.9%);
+  --primary: hsl(32, 100%, 54.3%);
+  --primary-foreground: hsl(0, 0%, 9%);
+  --secondary: hsl(0, 0%, 23.9%);
+  --secondary-foreground: hsl(0, 0%, 85.9%);
+  --muted: hsl(0, 0%, 15%);
+  --muted-foreground: hsl(0, 0%, 54%);
+  --accent: hsl(32, 100%, 54.3%);
+  --accent-foreground: hsl(0, 0%, 9%);
+  --destructive: hsl(342, 100%, 60.8%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --border: hsl(0, 0%, 23.9%);
+  --input: hsl(0, 0%, 23.9%);
+  --ring: hsl(32, 100%, 54.3%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
+      "Open Sans", "Helvetica Neue", sans-serif;
+    height: 100vh;
+  }
+}
+
+@layer components {
+  .preferenceBtn {
+    @apply relative rounded px-3 py-1.5 font-medium items-center transition-all focus:outline-none inline-flex  ml-auto p-1 mr-2 hover:bg-dark-fill-3;
+  }
+
+  .preferenceBtn-tooltip {
+    @apply absolute w-auto p-2 text-sm m-2  min-w-max translate-x-3  right-0 top-5 z-10 rounded-md shadow-md
+    text-dark-layer-2 bg-gray-200  origin-center scale-0 transition-all duration-100 ease-linear group-hover:scale-100;
+  }
+}
+
+/* Code editor specific styles */
+.code-editor {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.code-editor .cm-editor {
+  background: transparent;
+}
+
+.code-editor .cm-focused {
+  outline: none;
+}
+
+.code-editor .cm-content {
+  padding: 16px;
+}
+
+.code-editor .cm-line {
+  padding: 0;
+}
+
+/* CODE EDITOR*/
+.cm-scroller,
+.cm-gutters {
+  background-color: #282828 !important;
+}
+.cm-focused {
+  outline: none !important;
+}
+
+/* Split view styles */
+.split {
+  display: flex;
+  flex-direction: row;
+}
+
+.gutter {
+  background-color: rgb(26, 26, 26);
+  background-repeat: no-repeat;
+  background-position: 50%;
+}
+.gutter:hover {
+  background-color: #0a84ff;
+}
+
+.gutter.gutter-horizontal {
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAeCAYAAADkftS9AAAAIklEQVQoU2M4c+bMfxAGAgYYmwGrIIiDjrELjpo5aiZeMwF+yNnOs5KSvgAAAABJRU5ErkJggg==");
+  cursor: col-resize;
+}
+
+.gutter.gutter-vertical {
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAFAQMAAABo7865AAAABlBMVEVHcEzMzMzyAv2sAAAAAXRSTlMAQObYZgAAABBJREFUeF5jOAMEEAIEEFwAn3kMwcB6I2AAAAAASUVORK5CYII=");
+  cursor: row-resize;
+}
+
+code {
+  border-radius: 5px;
+  border-width: 1px;
+  font-family: sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  padding: 0.125rem;
+  letter-spacing: 1px;
+  white-space: pre-wrap;
+  background-color: hsla(0, 0%, 100%, 0.07);
+  border-color: rgba(247, 250, 255, 0.12);
+  color: rgba(239, 241, 246, 0.75);
+}
+
+.example-card pre {
+  background-color: hsla(0, 0%, 100%, 0.1);
+  border-radius: 0.5rem;
+  color: rgba(239, 241, 246, 0.75);
+  font-size: 0.98rem;
+  line-height: 1.25rem;
+  margin-bottom: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  white-space: pre-wrap;
+}
+.example-card pre strong {
+  color: white;
+  font-size: 1rem;
+}
+
+/* Split pane styling */
+.split {
+  display: flex;
+  height: calc(100vh - 64px);
+}
+
+.gutter {
+  background: var(--dark-divider-border-2);
+  cursor: col-resize;
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.gutter:hover {
+  background: var(--brand-orange);
+}
+
+.gutter::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 40px;
+  background: var(--dark-gray-6);
+  border-radius: 2px;
+}
+
+.gutter:hover::before {
+  background: white;
+}
+
+/* Preference button styling */
+.preferenceBtn {
+  @apply relative text-dark-gray-6 hover:text-brand-orange transition-colors text-sm p-2 rounded;
+}
+
+.preferenceBtn-tooltip {
+  @apply absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs bg-dark-layer-2 text-white rounded opacity-0 pointer-events-none transition-opacity;
+}
+
+.preferenceBtn:hover .preferenceBtn-tooltip {
+  @apply opacity-100;
+}
+
+/* Z-index utilities */
+.z-modal {
+  z-index: 1000;
+}
+
+/* Brand color utilities */
+.bg-brand-orange {
+  background-color: var(--brand-orange);
+}
+
+.bg-brand-orange-s {
+  background-color: var(--brand-orange-s);
+}
+
+.text-brand-orange {
+  color: var(--brand-orange);
+}
+
+.text-dark-label-2 {
+  color: var(--dark-label-2);
+}
+
+.text-dark-gray-6 {
+  color: var(--dark-gray-6);
+}
+
+.text-dark-gray-7 {
+  color: var(--dark-gray-7);
+}
+
+.text-dark-gray-8 {
+  color: var(--dark-gray-8);
+}
+
+.bg-dark-layer-1 {
+  background-color: var(--dark-layer-1);
+}
+
+.bg-dark-layer-2 {
+  background-color: var(--dark-layer-2);
+}
+
+.bg-dark-fill-2 {
+  background-color: var(--dark-fill-2);
+}
+
+.bg-dark-fill-3 {
+  background-color: var(--dark-fill-3);
+}
+
+.text-dark-green-s {
+  color: var(--dark-green-s);
+}
+
+.bg-dark-green-s {
+  background-color: var(--dark-green-s);
+}
+
+.text-dark-yellow {
+  color: var(--dark-yellow);
+}
+
+.bg-dark-yellow {
+  background-color: var(--dark-yellow);
+}
+
+.text-dark-pink {
+  color: var(--dark-pink);
+}
+
+.bg-dark-pink {
+  background-color: var(--dark-pink);
+}
+
+.text-dark-blue-s {
+  color: var(--dark-blue-s);
+}
+
+.bg-green-3 {
+  background-color: var(--dark-green-s);
+}
+
+.text-green-s {
+  color: var(--dark-green-s);
+}
+
+.bg-olive {
+  background-color: var(--olive);
+}
+
+.text-olive {
+  color: var(--olive);
+}
+
+.text-label-3 {
+  color: var(--dark-label-2);
+}
+
+.border-dark-divider-border-2 {
+  border-color: var(--dark-divider-border-2);
+}
