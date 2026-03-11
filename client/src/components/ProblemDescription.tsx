@@ -10,7 +10,7 @@ export function ProblemDescription({ problemSlug }: ProblemDescriptionProps) {
   const [liked, setLiked] = useState(false);
 
   const { data: problem, isLoading, error } = useQuery<Problem>({
-    queryKey: ["/api/problems", problemSlug],
+    queryKey: [`/api/problems/${problemSlug}`],
   });
 
   const getDifficultyColor = (difficulty: string) => {
