@@ -528,6 +528,11 @@ function extractFunctionName(code: string, language: string): string {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Health check - useful to verify API is alive on Vercel
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", ts: Date.now() });
+  });
+
   app.post("/api/execute", async (req, res) => {
     try {
       const { language, code, testCases, problemSlug } = req.body;
