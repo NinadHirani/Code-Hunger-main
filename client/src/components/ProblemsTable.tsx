@@ -42,31 +42,31 @@ const ProblemsTable: React.FC = () => {
   const problems: DisplayProblem[] =
     apiProblems.length > 0
       ? apiProblems.map((p): DisplayProblem => ({
-          id: p.id,
-          title: p.title,
-          slug: p.slug || p.id,
-          difficulty: (p.difficulty as "Easy" | "Medium" | "Hard") || "Easy",
-          category: (p.topics && p.topics[0]) || "Algorithm",
-          order: p.order ?? 0,
-          videoId: p.videoId || undefined,
-          topics: p.topics || [],
-          acceptance: p.acceptance ?? undefined,
-          submissions: p.submissions ?? undefined,
-          accepted: p.accepted ?? undefined,
-        }))
+        id: p.id,
+        title: p.title,
+        slug: p.slug || p.id,
+        difficulty: (p.difficulty as "Easy" | "Medium" | "Hard") || "Easy",
+        category: (p.topics && p.topics[0]) || "Algorithm",
+        order: p.order ?? 0,
+        videoId: p.videoId || undefined,
+        topics: p.topics || [],
+        acceptance: p.acceptance ?? undefined,
+        submissions: p.submissions ?? undefined,
+        accepted: p.accepted ?? undefined,
+      }))
       : problemsData.map((p): DisplayProblem => ({
-          id: p.id,
-          title: p.title,
-          slug: p.slug,
-          difficulty: p.difficulty,
-          category: p.category,
-          order: p.order,
-          videoId: p.videoId,
-          topics: p.topics,
-          acceptance: p.acceptance,
-          submissions: p.submissions,
-          accepted: p.accepted,
-        }));
+        id: p.id,
+        title: p.title,
+        slug: p.slug,
+        difficulty: p.difficulty,
+        category: p.category,
+        order: p.order,
+        videoId: p.videoId,
+        topics: p.topics,
+        acceptance: p.acceptance,
+        submissions: p.submissions,
+        accepted: p.accepted,
+      }));
 
   const sortedProblems = [...problems].sort((a, b) => a.order - b.order);
 
@@ -131,13 +131,12 @@ const ProblemsTable: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${
-                      problem.difficulty === "Easy"
+                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${problem.difficulty === "Easy"
                         ? "bg-dark-green-s/20 text-dark-green-s"
                         : problem.difficulty === "Medium"
-                        ? "bg-dark-yellow/20 text-dark-yellow"
-                        : "bg-dark-pink/20 text-dark-pink"
-                    }`}>
+                          ? "bg-dark-yellow/20 text-dark-yellow"
+                          : "bg-dark-pink/20 text-dark-pink"
+                      }`}>
                       {problem.difficulty}
                     </span>
                   </td>
