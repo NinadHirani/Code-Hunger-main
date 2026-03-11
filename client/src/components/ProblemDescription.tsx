@@ -2,6 +2,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Problem } from "@shared/schema";
 
+interface ProblemExample {
+  input?: string;
+  output?: string;
+  explanation?: string;
+}
+
 interface ProblemDescriptionProps {
   problemSlug: string;
 }
@@ -11,6 +17,12 @@ export function ProblemDescription({ problemSlug }: ProblemDescriptionProps) {
 
   const { data: problem, isLoading, error } = useQuery<Problem>({
     queryKey: [`/api/problems/${problemSlug}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/problems/${problemSlug}`);
+      if (!res.ok) throw new Error("Failed to fetch problem");
+      return res.json() as Promise<Problem>;
+    },
+    enabled: !!problemSlug,
   });
 
   const getDifficultyColor = (difficulty: string) => {
@@ -49,6 +61,13 @@ export function ProblemDescription({ problemSlug }: ProblemDescriptionProps) {
     );
   }
 
+  const examples: ProblemExample[] = Array.isArray(problem.examples)
+    ? (problem.examples as ProblemExample[])
+    : [];
+  const constraints: string[] = Array.isArray(problem.constraints)
+    ? (problem.constraints as string[])
+    : [];
+
   return (
     <div className="p-6" data-testid="problem-description">
       {/* Problem Header */}
@@ -60,10 +79,17 @@ export function ProblemDescription({ problemSlug }: ProblemDescriptionProps) {
               onClick={() => setLiked(!liked)}
               className={`transition-colors ${liked ? 'text-brand-orange' : 'text-dark-gray-6 hover:text-brand-orange'}`}
               data-testid="like-button"
+              aria-label={liked ? "Unlike problem" : "Like problem"}
+              title={liked ? "Unlike problem" : "Like problem"}
             >
               <i className={`fas ${liked ? 'fa-heart' : 'fa-heart'}`}></i>
             </button>
-            <button className="text-dark-gray-6 hover:text-brand-orange transition-colors" data-testid="share-button">
+            <button
+              className="text-dark-gray-6 hover:text-brand-orange transition-colors"
+              data-testid="share-button"
+              aria-label="Share problem"
+              title="Share problem"
+            >
               <i className="fas fa-share"></i>
             </button>
           </div>
@@ -73,9 +99,9 @@ export function ProblemDescription({ problemSlug }: ProblemDescriptionProps) {
           <span className={`px-3 py-1 rounded text-sm font-medium ${getDifficultyColor(problem.difficulty)}`} data-testid="difficulty-badge">
             {problem.difficulty}
           </span>
-          {problem.topics?.map(topic => (
-            <span key={topic} className="text-dark-gray-6 text-sm" data-testid={`topic-${topic.toLowerCase().replace(/\s+/g, '-')}`}>
-              {topic}
+          {(problem.topics ?? []).map(topic => (
+            <span key={String(topic)} className="text-dark-gray-6 text-sm" data-testid={`topic-${String(topic).toLowerCase().replace(/\s+/g, '-')}`}>
+              {String(topic)}
             </span>
           ))}
         </div>
@@ -96,31 +122,36 @@ export function ProblemDescription({ problemSlug }: ProblemDescriptionProps) {
         />
 
         {/* Examples */}
-        {problem.examples && Array.isArray(problem.examples) && problem.examples.length > 0 && (
+        {examples.length > 0 && (
           <div className="space-y-4" data-testid="examples">
-            {(problem.examples as any[]).map((example: any, index: number) => (
-              <div key={index} className="example-card">
-                <h3 className="text-white font-semibold mb-2" data-testid={`example-${index + 1}-title`}>
-                  Example {index + 1}:
-                </h3>
-                <pre data-testid={`example-${index + 1}-content`}>
-<strong>Input:</strong> {example.input}
-<strong>Output:</strong> {example.output}
-{example.explanation && (
-<><strong>Explanation:</strong> {example.explanation}</>
-)}
-                </pre>
-              </div>
-            ))}
+            {examples.map((example: ProblemExample, index: number) => {
+              const ex = example as ProblemExample;
+              return (
+                <div key={index} className="example-card">
+                  <h3 className="text-white font-semibold mb-2" data-testid={`example-${index + 1}-title`}>
+                    Example {index + 1}:
+                  </h3>
+                  <pre data-testid={`example-${index + 1}-content`}>
+                    <strong>Input:</strong> {String(ex.input ?? '')}
+                    <strong>Output:</strong> {String(ex.output ?? '')}
+                    {ex.explanation && (
+                      <>
+                        <strong>Explanation:</strong> {String(ex.explanation)}
+                      </>
+                    )}
+                  </pre>
+                </div>
+              );
+            })}
           </div>
         )}
 
         {/* Constraints */}
-        {problem.constraints && Array.isArray(problem.constraints) && problem.constraints.length > 0 && (
+        {constraints.length > 0 && (
           <div className="mt-6" data-testid="constraints">
             <h3 className="text-white font-semibold mb-2">Constraints:</h3>
             <ul className="text-dark-gray-7 text-sm space-y-1">
-              {problem.constraints.map((constraint, index) => (
+              {constraints.map((constraint, index) => (
                 <li key={index} data-testid={`constraint-${index}`}>
                   {constraint}
                 </li>

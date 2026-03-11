@@ -503,7 +503,7 @@ function extractFunctionName(code: string, language: string): string {
   }
   if (language === "java") {
     // Match public methods inside class Solution, skip 'main'
-    const methods = [...code.matchAll(/public\s+[\w<>\[\]]+\s+(\w+)\s*\(/g)];
+    const methods = Array.from(code.matchAll(/public\s+[\w<>\[\]]+\s+(\w+)\s*\(/g));
     for (const m of methods) {
       if (!skipNames.has(m[1])) return m[1];
     }
@@ -518,7 +518,7 @@ function extractFunctionName(code: string, language: string): string {
       if (methodMatch && !skipNames.has(methodMatch[1])) return methodMatch[1];
     }
     // Fallback: find any function that isn't a keyword or main
-    const allFns = [...code.matchAll(/\b(\w+)\s*\([^)]*\)\s*\{/g)];
+    const allFns = Array.from(code.matchAll(/\b(\w+)\s*\([^)]*\)\s*\{/g));
     for (const m of allFns) {
       if (!skipNames.has(m[1])) return m[1];
     }

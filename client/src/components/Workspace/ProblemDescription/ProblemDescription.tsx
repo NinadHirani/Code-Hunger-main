@@ -6,10 +6,26 @@ import { BsCheck2Circle } from "react-icons/bs";
 import { TiStarOutline } from "react-icons/ti";
 import { toast } from "react-toastify";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { Problem } from "@shared/schema";
 
 type ProblemDescriptionProps = {
 	problemSlug: string;
 	_solved: boolean;
+};
+
+type ProblemInteraction = {
+	liked?: boolean;
+	disliked?: boolean;
+	starred?: boolean;
+	solved?: boolean;
+	likes?: number;
+	dislikes?: number;
+};
+
+type ProblemExample = {
+	input?: string;
+	output?: string;
+	explanation?: string;
 };
 
 const getVisitorId = () => {
@@ -26,16 +42,16 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 	const queryClient = useQueryClient();
 	const visitorId = getVisitorId();
 
-	const { data: problem, isLoading } = useQuery({
+	const { data: problem, isLoading } = useQuery<Problem>({
 		queryKey: [`/api/problems/${problemSlug}`],
 		enabled: !!problemSlug
 	});
 
-	const { data: interaction, refetch: refetchInteraction } = useQuery({
+	const { data: interaction, refetch: refetchInteraction } = useQuery<ProblemInteraction>({
 		queryKey: [`/api/problems/${problemSlug}/interaction`, visitorId],
 		queryFn: async () => {
 			const res = await fetch(`/api/problems/${problemSlug}/interaction?visitorId=${visitorId}`);
-			return res.json();
+			return res.json() as Promise<ProblemInteraction>;
 		},
 		enabled: !!problemSlug
 	});
@@ -165,6 +181,8 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 	const solved = interaction?.solved || false;
 	const likes = interaction?.likes || 0;
 	const dislikes = interaction?.dislikes || 0;
+	const examples: ProblemExample[] = Array.isArray(problem.examples) ? (problem.examples as ProblemExample[]) : [];
+	const constraints: string[] = Array.isArray(problem.constraints) ? (problem.constraints as string[]) : [];
 
 	return (
 		<div className='bg-dark-layer-1'>
@@ -224,7 +242,7 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 						</div>
 
 						<div className='mt-4'>
-							{problem.examples && problem.examples.map((example: any, index: number) => (
+							{examples.map((example: ProblemExample, index: number) => (
 								<div key={index}>
 									<p className='font-medium text-white '>Example {index + 1}: </p>
 									<div className='example-card'>
@@ -247,7 +265,9 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 						<div className='my-8 pb-4'>
 							<div className='text-white text-sm font-medium'>Constraints:</div>
 							<ul className='text-white ml-5 list-disc '>
-								<div dangerouslySetInnerHTML={{ __html: problem.constraints }} />
+								{constraints.map((constraint, index) => (
+									<li key={index}>{constraint}</li>
+								))}
 							</ul>
 						</div>
 					</div>

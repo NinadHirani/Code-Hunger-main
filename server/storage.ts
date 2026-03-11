@@ -1033,7 +1033,7 @@ public:
   }
 
   private initializeBadges() {
-    const sampleBadges: InsertBadgeSchema[] = [
+    const sampleBadges: Omit<Badge, "id">[] = [
       { name: "First Solve", description: "Solved your first problem!", image: "🥇", criteria: { type: "solved_count", count: 1 } },
       { name: "Algorithmist", description: "Solved 10 problems.", image: "👨‍💻", criteria: { type: "solved_count", count: 10 } },
       { name: "Daily Streak", description: "Maintained a 7-day streak!", image: "🔥", criteria: { type: "streak_count", count: 7 } }
@@ -1063,6 +1063,9 @@ public:
       ...insertUser, 
       id,
       avatar: insertUser.avatar || null,
+      collegeId: insertUser.collegeId ?? null,
+      githubToken: insertUser.githubToken ?? null,
+      replitId: insertUser.replitId ?? null,
       createdAt: new Date()
     };
     this.users.set(id, user);
@@ -1084,15 +1087,23 @@ public:
   async createProblem(insertProblem: InsertProblem): Promise<Problem> {
     const id = randomUUID();
     const problem: Problem = { 
-      ...insertProblem, 
       id,
-      submissions: insertProblem.submissions || 0,
-      acceptance: insertProblem.acceptance || 0,
-      accepted: insertProblem.accepted || 0,
-      likes: insertProblem.likes || 0,
-      dislikes: insertProblem.dislikes || 0,
-      constraints: insertProblem.constraints || [],
-      topics: insertProblem.topics || [],
+      title: insertProblem.title,
+      slug: insertProblem.slug,
+      difficulty: insertProblem.difficulty,
+      description: insertProblem.description,
+      examples: insertProblem.examples ?? [],
+      constraints: insertProblem.constraints ?? [],
+      topics: insertProblem.topics ?? [],
+      acceptance: insertProblem.acceptance ?? 0,
+      submissions: insertProblem.submissions ?? 0,
+      accepted: insertProblem.accepted ?? 0,
+      likes: insertProblem.likes ?? 0,
+      dislikes: insertProblem.dislikes ?? 0,
+      starterCode: insertProblem.starterCode ?? {},
+      testCases: insertProblem.testCases ?? [],
+      order: insertProblem.order ?? 0,
+      videoId: insertProblem.videoId ?? null,
       createdAt: new Date()
     };
     this.problems.set(id, problem);
@@ -1154,9 +1165,12 @@ public:
     const userProblem: UserProblem = { 
       ...insertUserProblem, 
       id,
-      solved: insertUserProblem.solved || false,
-      attempts: insertUserProblem.attempts || 0,
-      lastAttemptAt: insertUserProblem.lastAttemptAt || null
+      liked: insertUserProblem.liked ?? false,
+      disliked: insertUserProblem.disliked ?? false,
+      starred: insertUserProblem.starred ?? false,
+      solved: insertUserProblem.solved ?? false,
+      attempts: insertUserProblem.attempts ?? 0,
+      lastAttemptAt: insertUserProblem.lastAttemptAt ?? null
     };
     const key = `${userProblem.visitorId}-${userProblem.problemSlug}`; // Fixed to use slug for interaction tracking
     this.userProblems.set(key, userProblem);
@@ -1294,8 +1308,9 @@ public:
     const contest: Contest = { 
       ...insertContest, 
       id,
-      problemIds: insertContest.problemIds || [],
-      status: insertContest.status || "upcoming",
+      description: insertContest.description ?? null,
+      problemIds: insertContest.problemIds ?? [],
+      status: insertContest.status ?? "upcoming",
       createdAt: new Date()
     };
     this.contests.set(id, contest);
@@ -1335,25 +1350,29 @@ public:
   }
 
   async updateUserStreak(userId: string): Promise<UserStreak> {
-    const current = this.userStreaks.get(userId) || { id: randomUUID(), userId, currentStreak: 0, longestStreak: 0, lastSubmissionAt: null };
+    const current: UserStreak = this.userStreaks.get(userId) || { id: randomUUID(), userId, currentStreak: 0, longestStreak: 0, lastSubmissionAt: null };
     const now = new Date();
     const lastAt = current.lastSubmissionAt;
+    let currentStreak = current.currentStreak ?? 0;
+    let longestStreak = current.longestStreak ?? 0;
 
     if (!lastAt) {
-      current.currentStreak = 1;
+      currentStreak = 1;
     } else {
       const diff = now.getTime() - lastAt.getTime();
       const diffDays = diff / (1000 * 3600 * 24);
       if (diffDays < 1) {
         // Same day, do nothing
       } else if (diffDays < 2) {
-        current.currentStreak += 1;
+        currentStreak += 1;
       } else {
-        current.currentStreak = 1;
+        currentStreak = 1;
       }
     }
+    if (currentStreak > longestStreak) longestStreak = currentStreak;
+    current.currentStreak = currentStreak;
+    current.longestStreak = longestStreak;
     current.lastSubmissionAt = now;
-    if (current.currentStreak > current.longestStreak) current.longestStreak = current.currentStreak;
     this.userStreaks.set(userId, current);
     return current;
   }
@@ -1379,7 +1398,7 @@ public:
 
   async addRewardPoints(userId: string, points: number): Promise<RewardPoint> {
     const current = this.rewardPoints.get(userId) || { id: randomUUID(), userId, points: 0, updatedAt: new Date() };
-    current.points += points;
+    current.points = (current.points ?? 0) + points;
     current.updatedAt = new Date();
     this.rewardPoints.set(userId, current);
     return current;
