@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import { registerRoutes } from "../server/routes";
 
 const app = express();
 
@@ -26,7 +27,6 @@ function init(): Promise<void> {
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
-    const { registerRoutes } = await import("../server/routes.js");
     await registerRoutes(app);
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
