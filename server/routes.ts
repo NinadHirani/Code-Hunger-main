@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertSubmissionSchema, insertUserProblemSchema, insertContestSchema, insertContestParticipantSchema } from "@shared/schema";
+import { insertSubmissionSchema, insertUserProblemSchema, insertContestSchema, insertContestParticipantSchema } from "../shared/schema";
 import { z } from "zod";
 import { createHash } from "crypto";
 import OpenAI from "openai";
