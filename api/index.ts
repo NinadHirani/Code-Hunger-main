@@ -1,6 +1,4 @@
-import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "../server/routes";
 
 const app = express();
 
@@ -22,11 +20,13 @@ app.use(express.urlencoded({ extended: false }));
 
 // Use a promise so concurrent requests during init all wait for the same init
 let initPromise: Promise<void> | null = null;
+let initError: Error | null = null;
 
 function init(): Promise<void> {
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
+    const { registerRoutes } = await import("../server/routes");
     await registerRoutes(app);
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -34,7 +34,9 @@ function init(): Promise<void> {
       const message = err.message || "Internal Server Error";
       res.status(status).json({ message });
     });
-  })();
+  })().catch((error: unknown) => {
+    initError = error instanceof Error ? error : new Error(String(error));
+  });
 
   return initPromise;
 }
@@ -42,5 +44,11 @@ function init(): Promise<void> {
 // Vercel serverless handler
 export default async function handler(req: any, res: any) {
   await init();
+  if (initError) {
+    return res.status(500).json({
+      message: "API initialization failed",
+      error: initError.message,
+    });
+  }
   app(req, res);
 }
