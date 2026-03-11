@@ -42,7 +42,7 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 	const queryClient = useQueryClient();
 	const visitorId = getVisitorId();
 
-	const { data: problem, isLoading } = useQuery<Problem>({
+	const { data: problem, isLoading, isError, error } = useQuery<Problem>({
 		queryKey: [`/api/problems/${problemSlug}`],
 		enabled: !!problemSlug
 	});
@@ -134,7 +134,7 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 		setUpdating(false);
 	};
 
-	if (isLoading || !problem) {
+	if (isLoading) {
 		return (
 			<div className='bg-dark-layer-1'>
 				<div className='flex h-11 w-full items-center pt-2 bg-dark-layer-2 text-white overflow-x-hidden'>
@@ -156,6 +156,31 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 								<CircleSkeleton />
 							</div>
 						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
+
+	if (isError || !problem) {
+		return (
+			<div className='bg-dark-layer-1'>
+				<div className='flex h-11 w-full items-center pt-2 bg-dark-layer-2 text-white overflow-x-hidden'>
+					<div className={"bg-dark-layer-1 rounded-t-[5px] px-5 py-[10px] text-xs cursor-pointer"}>
+						Description
+					</div>
+				</div>
+				<div className='flex px-5 py-8 h-[calc(100vh-94px)] overflow-y-auto'>
+					<div>
+						<div className='text-white text-lg font-medium'>Unable to load problem</div>
+						<div className='text-dark-gray-6 text-sm mt-2'>
+							Please refresh the page or open another problem.
+						</div>
+						{isError && (
+							<div className='text-dark-gray-6 text-xs mt-2'>
+								{(error as Error)?.message || "Request failed"}
+							</div>
+						)}
 					</div>
 				</div>
 			</div>
