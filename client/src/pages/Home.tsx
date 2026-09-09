@@ -124,10 +124,27 @@ export default function Home() {
           </div>
           </div>
       </div>
-      <footer className="w-full py-6 mt-12 border-t border-dark-fill-3 text-center">
-        <p className="text-dark-gray-6 text-sm">
-          Developed by <span className="text-brand-orange font-semibold">Ninad Hirani</span>, <span className="text-brand-orange font-semibold">Kushal Kakadiya</span> and <span className="text-brand-orange font-semibold">Yash Kacha</span>
-        </p>
+      <footer className="w-full py-8 mt-12 border-t border-dark-fill-3 text-center">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-sm">
+          <p className="text-dark-gray-6">
+            Developed by{" "}
+            <Link href="/team" className="text-brand-orange font-semibold hover:underline cursor-pointer">
+              Ninad Hirani
+            </Link>
+            {", "}
+            <Link href="/team" className="text-brand-orange font-semibold hover:underline cursor-pointer">
+              Kushal Kakadiya
+            </Link>
+            {" and "}
+            <Link href="/team" className="text-brand-orange font-semibold hover:underline cursor-pointer">
+              Yash Kacha
+            </Link>
+          </p>
+          <span className="hidden sm:inline text-dark-divider-border-2">•</span>
+          <Link href="/team" className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-brand-orange/10 text-brand-orange border border-brand-orange/20 hover:bg-brand-orange/20 transition-all cursor-pointer">
+            Meet the Team →
+          </Link>
+        </div>
       </footer>
     </div>
   );

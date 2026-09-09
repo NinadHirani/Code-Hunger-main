@@ -13,6 +13,7 @@ import Profile from "@/pages/Profile";
 import LearningPaths from "@/pages/LearningPaths";
 import Colleges from "@/pages/Colleges";
 import JobSimulations from "@/pages/JobSimulations";
+import Team from "@/pages/Team";
 import NotFound from "@/pages/not-found";
 import { Chatbot } from "@/components/Chatbot";
 import "react-toastify/dist/ReactToastify.css";
@@ -29,6 +30,7 @@ function Router() {
       <Route path="/learning-paths" component={LearningPaths} />
       <Route path="/colleges" component={Colleges} />
       <Route path="/job-simulations" component={JobSimulations} />
+      <Route path="/team" component={Team} />
       <Route path="/search" component={Home} />
       <Route component={NotFound} />
     </Switch>

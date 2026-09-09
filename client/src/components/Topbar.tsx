@@ -63,6 +63,9 @@ const Topbar: React.FC<TopbarProps> = ({ problemPage }) => {
 								Sims
 								<span className='absolute -top-2 -right-3 text-[7px] bg-brand-orange text-white px-1 py-0.5 rounded-full font-bold'>NEW</span>
 							</Link>
+							<Link href='/team' className={`hover:text-white transition-colors font-medium ${location === '/team' ? 'text-brand-orange' : 'text-dark-gray-7'}`}>
+								Team
+							</Link>
 						</div>
 					)}
 				</div>
