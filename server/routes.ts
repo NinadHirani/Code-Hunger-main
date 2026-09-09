@@ -1,7 +1,10 @@
 import type { Express } from "express";
+import { Router } from "express";
+import vm from "vm";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertSubmissionSchema, insertUserProblemSchema, insertContestSchema, insertContestParticipantSchema } from "../shared/schema";
+import { getDetailedProblem, getAllDetailedProblems } from "../shared/problems";
 import { z } from "zod";
 import { createHash } from "crypto";
 import OpenAI from "openai";
@@ -492,7 +495,10 @@ function extractFunctionName(code: string, language: string): string {
 
   if (language === "javascript") {
     const match = code.match(/function\s+(\w+)\s*\(/);
-    return match ? match[1] : "solution";
+    if (match) return match[1];
+    const arrowMatch = code.match(/(?:const|let|var)\s+(\w+)\s*=\s*(?:function|\([^)]*\)\s*=>)/);
+    if (arrowMatch) return arrowMatch[1];
+    return "solution";
   }
   if (language === "python") {
     // Look for methods inside class Solution first
@@ -528,17 +534,23 @@ function extractFunctionName(code: string, language: string): string {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  const apiRouter = Router();
+
   // Health check - useful to verify API is alive on Vercel
-  app.get("/api/health", (_req, res) => {
+  apiRouter.get("/health", (_req, res) => {
     res.json({ status: "ok", ts: Date.now() });
   });
 
-  app.post("/api/execute", async (req, res) => {
+  apiRouter.post("/execute", async (req, res) => {
     try {
       const { language, code, testCases, problemSlug } = req.body;
       
       if (!LANGUAGE_MAP[language]) {
         return res.status(400).json({ error: "Unsupported language" });
+      }
+
+      if (!Array.isArray(testCases) || testCases.length === 0) {
+        return res.status(400).json({ error: "No test cases provided" });
       }
       
       const problemType = detectProblemType(problemSlug || "");
@@ -546,20 +558,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const langConfig = LANGUAGE_MAP[language];
       const results: any[] = [];
       
+      // Fast in-process execution for JavaScript using Node vm
+      if (language === "javascript") {
+        for (let i = 0; i < testCases.length; i++) {
+          const testCase = testCases[i];
+          const wrappedCode = generateTestWrapper("javascript", code, testCase, problemType, functionName);
+          const logs: string[] = [];
+          
+          try {
+            const sandbox: Record<string, any> = {
+              console: {
+                log: (...args: any[]) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')),
+                error: (...args: any[]) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')),
+                warn: () => {},
+                info: () => {},
+              },
+              JSON,
+              Math,
+              Array,
+              Object,
+              String,
+              Number,
+              Boolean,
+              Date,
+              RegExp,
+              parseInt,
+              parseFloat,
+              isNaN,
+              isFinite,
+              Set,
+              Map,
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(wrappedCode, sandbox, { timeout: 3000 });
+            
+            const lastLog = logs[logs.length - 1]?.trim() || "";
+            let parsedOutput: any;
+            try {
+              parsedOutput = JSON.parse(lastLog);
+            } catch {
+              parsedOutput = lastLog;
+            }
+            
+            const expected = testCase.expected;
+            const passed = JSON.stringify(parsedOutput) === JSON.stringify(expected);
+            
+            results.push({
+              testCase: i + 1,
+              passed,
+              input: JSON.stringify(testCase.input),
+              expected: JSON.stringify(expected),
+              actual: JSON.stringify(parsedOutput),
+            });
+          } catch (vmErr: any) {
+            results.push({
+              testCase: i + 1,
+              passed: false,
+              input: JSON.stringify(testCase.input),
+              expected: JSON.stringify(testCase.expected),
+              actual: "Error",
+              error: vmErr.message || "Runtime Error"
+            });
+          }
+        }
+        return res.json({ results });
+      }
+
+      // External Piston execution for Python, Java, C++
       for (let i = 0; i < testCases.length; i++) {
         const testCase = testCases[i];
         const wrappedCode = generateTestWrapper(language, code, testCase, problemType, functionName);
         
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 9000);
+
           const response = await fetch(`${PISTON_API}/execute`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
             body: JSON.stringify({
               language: langConfig.language,
               version: langConfig.version,
               files: [{ name: language === "java" ? "Main.java" : `main.${language === "cpp" ? "cpp" : language === "python" ? "py" : "js"}`, content: wrappedCode }],
             }),
           });
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errText = await response.text().catch(() => "");
+            results.push({
+              testCase: i + 1,
+              passed: false,
+              input: JSON.stringify(testCase.input),
+              expected: JSON.stringify(testCase.expected),
+              actual: "Error",
+              error: `Compiler status ${response.status}: ${errText.slice(0, 100) || "Execution service unavailable"}`
+            });
+            continue;
+          }
           
           const pistonResult = await response.json();
           
@@ -594,13 +691,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         } catch (execError: any) {
+          const isTimeout = execError.name === "AbortError";
           results.push({
             testCase: i + 1,
             passed: false,
             input: JSON.stringify(testCase.input),
             expected: JSON.stringify(testCase.expected),
             actual: "Error",
-            error: execError.message || "Execution failed"
+            error: isTimeout ? "Execution timed out (9s limit)" : (execError.message || "Execution failed")
           });
         }
       }
@@ -612,23 +710,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get all problems
-  app.get("/api/problems", async (req, res) => {
+  apiRouter.get("/problems", async (req, res) => {
     try {
-      const problems = await storage.getProblems();
+      let problems = await storage.getProblems();
+      if (!problems || problems.length === 0) {
+        problems = getAllDetailedProblems() as any;
+      }
       res.json(problems);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch problems" });
+      res.json(getAllDetailedProblems());
     }
   });
 
   // Get user interaction data for a problem (must be before :identifier route)
-  app.get("/api/problems/:slug/interaction", async (req, res) => {
+  apiRouter.get("/problems/:slug/interaction", async (req, res) => {
     try {
       const { slug } = req.params;
       const visitorId = req.query.visitorId as string || "anonymous";
       
       const interaction = await storage.getUserProblemInteraction(visitorId, slug);
-      const problem = await storage.getProblemBySlug(slug);
+      let problem = await storage.getProblemBySlug(slug);
+      if (!problem) {
+        problem = await storage.getProblem(slug);
+      }
       
       res.json({
         liked: interaction?.liked || false,
@@ -644,7 +748,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Like/unlike a problem
-  app.post("/api/problems/:slug/like", async (req, res) => {
+  apiRouter.post("/problems/:slug/like", async (req, res) => {
     try {
       const { slug } = req.params;
       const { visitorId } = req.body;
@@ -657,7 +761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Dislike/undislike a problem
-  app.post("/api/problems/:slug/dislike", async (req, res) => {
+  apiRouter.post("/problems/:slug/dislike", async (req, res) => {
     try {
       const { slug } = req.params;
       const { visitorId } = req.body;
@@ -670,7 +774,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Star/unstar a problem
-  app.post("/api/problems/:slug/star", async (req, res) => {
+  apiRouter.post("/problems/:slug/star", async (req, res) => {
     try {
       const { slug } = req.params;
       const { visitorId } = req.body;
@@ -683,7 +787,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get all interactions for a visitor (for main page)
-  app.get("/api/interactions", async (req, res) => {
+  apiRouter.get("/interactions", async (req, res) => {
     try {
       const visitorId = req.query.visitorId as string || "anonymous";
       const interactions = await storage.getAllInteractions(visitorId);
@@ -694,29 +798,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get a specific problem by ID or slug
-  app.get("/api/problems/:identifier", async (req, res) => {
+  apiRouter.get("/problems/:identifier", async (req, res) => {
     try {
       const { identifier } = req.params;
-      let problem;
-      
-      if (identifier.includes("-")) {
-        problem = await storage.getProblemBySlug(identifier);
-      } else {
+      let problem = await storage.getProblemBySlug(identifier);
+      if (!problem) {
         problem = await storage.getProblem(identifier);
+      }
+      if (!problem) {
+        problem = getDetailedProblem(identifier) as any;
       }
       
       if (!problem) {
         return res.status(404).json({ message: "Problem not found" });
       }
+
+      const detailed = getDetailedProblem(problem.slug || identifier);
+      if (detailed) {
+        problem = {
+          ...detailed,
+          ...problem,
+          starterCode: (problem as any).starterCode || detailed.starterCode,
+          testCases: (problem as any).testCases || detailed.testCases,
+          examples: (problem as any).examples?.length ? problem.examples : detailed.examples,
+          constraints: (problem as any).constraints?.length ? problem.constraints : detailed.constraints,
+          description: problem.description || detailed.description,
+        };
+      }
       
       res.json(problem);
     } catch (error) {
+      const fallback = getDetailedProblem(req.params.identifier);
+      if (fallback) {
+        return res.json(fallback);
+      }
       res.status(500).json({ message: "Failed to fetch problem" });
     }
   });
 
   // Submit a solution
-  app.post("/api/submissions", async (req, res) => {
+  apiRouter.post("/submissions", async (req, res) => {
     try {
         const submissionData = insertSubmissionSchema.parse(req.body);
         
@@ -725,7 +846,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isAccepted = submissionData.status === "Accepted";
 
         // Resolve problemId (UUID) to slug for userProblems tracking
-        const problem = await storage.getProblem(submissionData.problemId);
+        const problem = await storage.getProblem(submissionData.problemId) || await storage.getProblemBySlug(submissionData.problemId);
         const problemSlug = problem?.slug || submissionData.problemId;
 
         // Update user problem status (keyed by slug, not UUID)
@@ -781,7 +902,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Contests
-  app.get("/api/contests", async (req, res) => {
+  apiRouter.get("/contests", async (req, res) => {
     try {
       const contests = await storage.getContests();
       res.json(contests);
@@ -790,7 +911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/contests/:id", async (req, res) => {
+  apiRouter.get("/contests/:id", async (req, res) => {
     try {
       const contest = await storage.getContest(req.params.id);
       if (!contest) return res.status(404).json({ message: "Contest not found" });
@@ -800,7 +921,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contests/:id/join", async (req, res) => {
+  apiRouter.post("/contests/:id/join", async (req, res) => {
     try {
       const { userId } = req.body;
       const participant = await storage.joinContest({ contestId: req.params.id, userId });
@@ -810,7 +931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/contests/:id/leaderboard", async (req, res) => {
+  apiRouter.get("/contests/:id/leaderboard", async (req, res) => {
     try {
       const participants = await storage.getContestParticipants(req.params.id);
       res.json(participants.sort((a, b) => (b.score || 0) - (a.score || 0)));
@@ -820,7 +941,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Gamification
-  app.get("/api/users/:userId/streak", async (req, res) => {
+  apiRouter.get("/users/:userId/streak", async (req, res) => {
     try {
       const streak = await storage.getUserStreak(req.params.userId);
       res.json(streak || { currentStreak: 0, longestStreak: 0 });
@@ -829,7 +950,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:userId/badges", async (req, res) => {
+  apiRouter.get("/users/:userId/badges", async (req, res) => {
     try {
       const userBadges = await storage.getUserBadges(req.params.userId);
       const badges = await storage.getBadges();
@@ -843,7 +964,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:userId/rewards", async (req, res) => {
+  apiRouter.get("/users/:userId/rewards", async (req, res) => {
     try {
       const rewards = await storage.getRewardPoints(req.params.userId);
       res.json(rewards || { points: 0 });
@@ -852,7 +973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/badges", async (req, res) => {
+  apiRouter.get("/badges", async (req, res) => {
     try {
       const badges = await storage.getBadges();
       res.json(badges);
@@ -862,7 +983,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Secure a contest result (Blockchain simulation)
-  app.post("/api/contests/:id/secure", async (req, res) => {
+  apiRouter.post("/contests/:id/secure", async (req, res) => {
     try {
       const { userId, score } = req.body;
       const hash = secureResult({ contestId: req.params.id, userId, score, timestamp: Date.now() });
@@ -874,7 +995,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user submissions with problem details
-  app.get("/api/users/:userId/submissions-with-details", async (req, res) => {
+  apiRouter.get("/users/:userId/submissions-with-details", async (req, res) => {
     try {
       const { userId } = req.params;
       const submissions = await storage.getSubmissionsWithDetails(userId);
@@ -885,7 +1006,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user submissions
-  app.get("/api/users/:userId/submissions", async (req, res) => {
+  apiRouter.get("/users/:userId/submissions", async (req, res) => {
     try {
       const { userId } = req.params;
       const { problemId } = req.query;
@@ -898,7 +1019,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user problem status
-  app.get("/api/users/:userId/problems", async (req, res) => {
+  apiRouter.get("/users/:userId/problems", async (req, res) => {
     try {
       const { userId } = req.params;
       const problems = await storage.getProblems();
@@ -920,135 +1041,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-    // Create or update user (for Firebase auth integration)
-    app.post("/api/users", async (req, res) => {
-      try {
-        const userData = req.body;
-        
-        // Check if user exists
-        let user = await storage.getUserByEmail(userData.email);
-        if (user) {
-          res.json(user);
-        } else {
-          user = await storage.createUser(userData);
-          res.json(user);
-        }
-      } catch (error) {
-        res.status(500).json({ message: "Failed to create/update user" });
+  // Create or update user (for Firebase auth integration)
+  apiRouter.post("/users", async (req, res) => {
+    try {
+      const userData = req.body;
+      
+      // Check if user exists
+      let user = await storage.getUserByEmail(userData.email);
+      if (user) {
+        res.json(user);
+      } else {
+        user = await storage.createUser(userData);
+        res.json(user);
       }
-    });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create/update user" });
+    }
+  });
 
-      // AI Chatbot route
-      app.post("/api/chat", async (req, res) => {
-        try {
-          const { messages } = req.body;
-          
-          if (!openai) {
-            return res.status(503).json({ 
-              content: "I'm sorry, my AI processing is currently disabled because the API key is missing. Please contact the administrator to set up the OPENAI_API_KEY." 
-            });
-          }
+  // AI Chatbot route
+  apiRouter.post("/chat", async (req, res) => {
+    try {
+      const { messages } = req.body;
+      
+      if (!openai) {
+        return res.status(503).json({ 
+          content: "I'm sorry, my AI processing is currently disabled because the API key is missing. Please contact the administrator to set up the OPENAI_API_KEY." 
+        });
+      }
 
-          const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              ...messages
-            ],
-          });
-
-          const content = response.choices[0].message.content;
-          res.json({ content });
-        } catch (error: any) {
-          console.error("Chatbot error:", error);
-          res.status(500).json({ content: "Sorry, I encountered an error while processing your request." });
-        }
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          ...messages
+        ],
       });
 
-      // --- New Features Routes ---
+      const content = response.choices[0].message.content;
+      res.json({ content });
+    } catch (error: any) {
+      console.error("Chatbot error:", error);
+      res.status(500).json({ content: "Sorry, I encountered an error while processing your request." });
+    }
+  });
 
-      // Colleges
-      app.get("/api/colleges", async (req, res) => {
-        try {
-          const colleges = await storage.getColleges();
-          res.json(colleges);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to fetch colleges" });
-        }
-      });
+  // --- New Features Routes ---
 
-      app.get("/api/colleges/:slug", async (req, res) => {
-        try {
-          const college = await storage.getCollegeBySlug(req.params.slug);
-          if (!college) return res.status(404).json({ message: "College not found" });
-          res.json(college);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to fetch college" });
-        }
-      });
+  // Colleges
+  apiRouter.get("/colleges", async (req, res) => {
+    try {
+      const colleges = await storage.getColleges();
+      res.json(colleges);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch colleges" });
+    }
+  });
 
-      // Learning Paths
-      app.get("/api/learning-paths", async (req, res) => {
-        try {
-          const paths = await storage.getLearningPaths();
-          res.json(paths);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to fetch learning paths" });
-        }
-      });
+  apiRouter.get("/colleges/:slug", async (req, res) => {
+    try {
+      const college = await storage.getCollegeBySlug(req.params.slug);
+      if (!college) return res.status(404).json({ message: "College not found" });
+      res.json(college);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch college" });
+    }
+  });
 
-      app.get("/api/learning-paths/:id", async (req, res) => {
-        try {
-          const path = await storage.getLearningPath(req.params.id);
-          if (!path) return res.status(404).json({ message: "Learning path not found" });
-          res.json(path);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to fetch learning path" });
-        }
-      });
+  // Learning Paths
+  apiRouter.get("/learning-paths", async (req, res) => {
+    try {
+      const paths = await storage.getLearningPaths();
+      res.json(paths);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch learning paths" });
+    }
+  });
 
-      app.get("/api/users/:userId/learning-paths", async (req, res) => {
-        try {
-          const paths = await storage.getUserLearningPaths(req.params.userId);
-          res.json(paths);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to fetch user learning paths" });
-        }
-      });
+  apiRouter.get("/learning-paths/:id", async (req, res) => {
+    try {
+      const path = await storage.getLearningPath(req.params.id);
+      if (!path) return res.status(404).json({ message: "Learning path not found" });
+      res.json(path);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch learning path" });
+    }
+  });
 
-      app.post("/api/users/:userId/learning-paths/:pathId/progress", async (req, res) => {
-        try {
-          const { progress, completed } = req.body;
-          const updated = await storage.updateUserLearningPath(req.params.userId, req.params.pathId, { progress, completed });
-          res.json(updated);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to update progress" });
-        }
-      });
+  apiRouter.get("/users/:userId/learning-paths", async (req, res) => {
+    try {
+      const paths = await storage.getUserLearningPaths(req.params.userId);
+      res.json(paths);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch user learning paths" });
+    }
+  });
 
-      // Job Simulations
-      app.get("/api/job-simulations", async (req, res) => {
-        try {
-          const simulations = await storage.getJobSimulations();
-          res.json(simulations);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to fetch job simulations" });
-        }
-      });
+  apiRouter.post("/users/:userId/learning-paths/:pathId/progress", async (req, res) => {
+    try {
+      const { progress, completed } = req.body;
+      const updated = await storage.updateUserLearningPath(req.params.userId, req.params.pathId, { progress, completed });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update progress" });
+    }
+  });
 
-      app.get("/api/job-simulations/:id", async (req, res) => {
-        try {
-          const simulation = await storage.getJobSimulation(req.params.id);
-          if (!simulation) return res.status(404).json({ message: "Simulation not found" });
-          res.json(simulation);
-        } catch (error) {
-          res.status(500).json({ message: "Failed to fetch simulation" });
-        }
-      });
+  // Job Simulations
+  apiRouter.get("/job-simulations", async (req, res) => {
+    try {
+      const simulations = await storage.getJobSimulations();
+      res.json(simulations);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch job simulations" });
+    }
+  });
 
-      const httpServer = createServer(app);
+  apiRouter.get("/job-simulations/:id", async (req, res) => {
+    try {
+      const simulation = await storage.getJobSimulation(req.params.id);
+      if (!simulation) return res.status(404).json({ message: "Simulation not found" });
+      res.json(simulation);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch simulation" });
+    }
+  });
 
+  // Mount API router for both `/api` prefix and root `/` (handles both standard Express and Vercel serverless rewrites)
+  app.use("/api", apiRouter);
+  app.use("/", apiRouter);
 
-
+  const httpServer = createServer(app);
   return httpServer;
 }

@@ -12,6 +12,7 @@ import EditorFooter from "./EditorFooter";
 import { toast } from "react-toastify";
 import useLocalStorage from "@/hooks/useLocalStorage";
 import { useQuery } from "@tanstack/react-query";
+import { getDetailedProblem } from "@/data/problems";
 
 type PlaygroundProps = {
 	problemSlug: string;
@@ -63,6 +64,143 @@ const getLanguageExtension = (lang: Language) => {
 	}
 };
 
+function runClientSideJS(code: string, testCases: { input: Record<string, unknown>; expected: unknown }[]): TestResult[] {
+	const results: TestResult[] = [];
+	
+	const helpers = `
+		function ListNode(val, next) {
+			this.val = (val === undefined ? 0 : val);
+			this.next = (next === undefined ? null : next);
+		}
+		function TreeNode(val, left, right) {
+			this.val = (val === undefined ? 0 : val);
+			this.left = (left === undefined ? null : left);
+			this.right = (right === undefined ? null : right);
+		}
+		function arrayToLinkedList(arr) {
+			if (!arr || !Array.isArray(arr) || arr.length === 0) return null;
+			const head = new ListNode(arr[0]);
+			let curr = head;
+			for (let i = 1; i < arr.length; i++) {
+				curr.next = new ListNode(arr[i]);
+				curr = curr.next;
+			}
+			return head;
+		}
+		function linkedListToArray(head) {
+			const arr = [];
+			let curr = head;
+			let count = 0;
+			while (curr && count < 10000) {
+				arr.push(curr.val);
+				curr = curr.next;
+				count++;
+			}
+			return arr;
+		}
+		function arrayToTree(arr) {
+			if (!arr || !Array.isArray(arr) || arr.length === 0 || arr[0] === null) return null;
+			const root = new TreeNode(arr[0]);
+			const queue = [root];
+			let i = 1;
+			while (queue.length > 0 && i < arr.length) {
+				const curr = queue.shift();
+				if (!curr) continue;
+				if (arr[i] !== null && arr[i] !== undefined) {
+					curr.left = new TreeNode(arr[i]);
+					queue.push(curr.left);
+				}
+				i++;
+				if (i < arr.length && arr[i] !== null && arr[i] !== undefined) {
+					curr.right = new TreeNode(arr[i]);
+					queue.push(curr.right);
+				}
+				i++;
+			}
+			return root;
+		}
+		function treeToArray(root) {
+			if (!root) return [];
+			const res = [];
+			const queue = [root];
+			while (queue.length > 0) {
+				const node = queue.shift();
+				if (node) {
+					res.push(node.val);
+					queue.push(node.left);
+					queue.push(node.right);
+				} else {
+					res.push(null);
+				}
+			}
+			while (res.length > 0 && res[res.length - 1] === null) res.pop();
+			return res;
+		}
+	`;
+
+	const fnMatch = code.match(/function\s+([a-zA-Z0-9_$]+)\s*\(/) || 
+	                code.match(/(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:function|\([^)]*\)\s*=>)/);
+	const fnName = fnMatch ? fnMatch[1] : null;
+
+	for (let i = 0; i < testCases.length; i++) {
+		const tc = testCases[i];
+		try {
+			const runner = new Function("input", `
+				${helpers}
+				${code}
+				
+				const targetFn = ${fnName ? fnName : 'undefined'};
+				if (typeof targetFn !== 'function') {
+					throw new Error('Solution function not found in code');
+				}
+				
+				const args = Object.entries(input).map(([k, v]) => {
+					if (k === 'head' || k === 'l1' || k === 'l2' || k === 'list1' || k === 'list2') {
+						return arrayToLinkedList(v);
+					}
+					if (k === 'root' || k === 'p' || k === 'q' || k === 'tree1' || k === 'tree2') {
+						return arrayToTree(v);
+					}
+					return v;
+				});
+
+				let result = targetFn(...args);
+				if (result && typeof result === 'object') {
+					if ('next' in result) {
+						result = linkedListToArray(result);
+					} else if ('left' in result || 'right' in result) {
+						result = treeToArray(result);
+					}
+				}
+				return result;
+			`);
+
+			const actual = runner(tc.input);
+			const expectedStr = JSON.stringify(tc.expected);
+			const actualStr = JSON.stringify(actual);
+			const passed = actualStr === expectedStr;
+
+			results.push({
+				testCase: i + 1,
+				passed,
+				input: JSON.stringify(tc.input),
+				expected: expectedStr,
+				actual: actualStr,
+			});
+		} catch (err: any) {
+			results.push({
+				testCase: i + 1,
+				passed: false,
+				input: JSON.stringify(tc.input),
+				expected: JSON.stringify(tc.expected),
+				actual: "Error",
+				error: err?.message || "Execution Error",
+			});
+		}
+	}
+	return results;
+}
+
 const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSolved }) => {
 	const [selectedLanguage, setSelectedLanguage] = useState<Language>("javascript");
 	const [activeTestCaseId, setActiveTestCaseId] = useState<number>(0);
@@ -79,15 +217,29 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 	});
 	const wsRef = useRef<WebSocket | null>(null);
 
+	const fallbackProblem = useMemo(() => getDetailedProblem(problemSlug), [problemSlug]);
+
 	const { data: problem, isLoading } = useQuery<Problem>({
 		queryKey: [`/api/problems/${problemSlug}`],
 	});
 
+	const currentProblem = useMemo(() => {
+		if (problem) {
+			return {
+				...fallbackProblem,
+				...problem,
+				starterCode: (problem.starterCode && Object.keys(problem.starterCode).length > 0) ? problem.starterCode : fallbackProblem?.starterCode,
+				testCases: (problem.testCases && problem.testCases.length > 0) ? problem.testCases : (fallbackProblem?.testCases || []),
+			} as unknown as Problem;
+		}
+		return fallbackProblem as unknown as Problem | undefined;
+	}, [problem, fallbackProblem]);
+
 	const [fontSize] = useLocalStorage<string>("lcc-fontSize", "14px");
 
 	const getDefaultCode = (lang: Language): string => {
-		if (!problem?.starterCode) return "";
-		return problem.starterCode[lang] || problem.starterCode.javascript || "";
+		if (!currentProblem?.starterCode) return "";
+		return currentProblem.starterCode[lang] || currentProblem.starterCode.javascript || "";
 	};
 
 	const [userCode, setUserCode] = useLocalStorage<UserCodeStore>(
@@ -133,18 +285,18 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 	}, []);
 
 	useEffect(() => {
-		if (problem?.starterCode) {
+		if (currentProblem?.starterCode) {
 			setUserCode((prev: UserCodeStore) => {
 				const updated = { ...prev };
 				(["javascript", "python", "java", "cpp"] as Language[]).forEach((lang) => {
 					if (!updated[lang] || updated[lang].trim() === "") {
-						updated[lang] = problem.starterCode[lang] || "";
+						updated[lang] = currentProblem.starterCode[lang] || "";
 					}
 				});
 				return updated;
 			});
 		}
-	}, [problem?.starterCode, setUserCode]);
+	}, [currentProblem?.starterCode, setUserCode]);
 
 	const currentCode = userCode[selectedLanguage] || getDefaultCode(selectedLanguage);
 
@@ -170,7 +322,8 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 	});
 
 	const handleRun = async () => {
-		if (!problem?.testCases) {
+		const testCases = currentProblem?.testCases;
+		if (!testCases || testCases.length === 0) {
 			toast.error("No test cases available");
 			return;
 		}
@@ -180,6 +333,9 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 		setConsoleOutput([{ type: "info", message: `Running ${selectedLanguage.toUpperCase()} code...` }]);
 		setTestResults([]);
 
+		let results: TestResult[] | null = null;
+		let executionError: string | null = null;
+
 		try {
 			const response = await fetch("/api/execute", {
 				method: "POST",
@@ -187,42 +343,59 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 				body: JSON.stringify({
 					language: selectedLanguage,
 					code: currentCode,
-					testCases: problem.testCases,
+					testCases: testCases,
 					problemSlug: problemSlug
 				})
 			});
 
-			const data = await response.json();
-
-			if (data.error) {
-				setConsoleOutput([{ type: "error", message: data.error }]);
-				toast.error("Execution failed");
-			} else {
-				const results = data.results as TestResult[];
-				setTestResults(results);
-
-				const passed = results.filter(r => r.passed).length;
-				const total = results.length;
-
-				if (passed === total) {
-					setConsoleOutput([{ type: "success", message: `All ${total} test cases passed!` }]);
-					toast.success("All test cases passed!", { position: "top-center", autoClose: 2000 });
-				} else {
-					setConsoleOutput([{ type: "error", message: `${passed}/${total} test cases passed` }]);
-					toast.error(`${total - passed} test case(s) failed`, { position: "top-center", autoClose: 2000 });
+			if (response.ok) {
+				const data = await response.json();
+				if (data.results) {
+					results = data.results as TestResult[];
+				} else if (data.error) {
+					executionError = data.error;
 				}
+			} else {
+				const errData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+				executionError = errData.error || `HTTP ${response.status}`;
 			}
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : "Execution failed";
-			setConsoleOutput([{ type: "error", message: errorMessage }]);
-			toast.error("Failed to execute code");
-		} finally {
-			setIsRunning(false);
+		} catch (err: any) {
+			executionError = err.message || "Network error";
 		}
+
+		// Client-side fallback for JavaScript if API failed or returned server error
+		if (!results && selectedLanguage === "javascript") {
+			try {
+				results = runClientSideJS(currentCode, testCases);
+				executionError = null;
+			} catch (fallbackErr: any) {
+				executionError = fallbackErr.message || "Client execution failed";
+			}
+		}
+
+		if (results) {
+			setTestResults(results);
+			const passed = results.filter(r => r.passed).length;
+			const total = results.length;
+
+			if (passed === total) {
+				setConsoleOutput([{ type: "success", message: `All ${total} test cases passed!` }]);
+				toast.success("All test cases passed!", { position: "top-center", autoClose: 2000 });
+			} else {
+				setConsoleOutput([{ type: "error", message: `${passed}/${total} test cases passed` }]);
+				toast.error(`${total - passed} test case(s) failed`, { position: "top-center", autoClose: 2000 });
+			}
+		} else {
+			setConsoleOutput([{ type: "error", message: executionError || "Execution failed" }]);
+			toast.error(executionError || "Failed to execute code");
+		}
+
+		setIsRunning(false);
 	};
 
 	const handleSubmit = async () => {
-		if (!problem?.testCases) {
+		const testCases = currentProblem?.testCases;
+		if (!testCases || testCases.length === 0) {
 			toast.error("No test cases available");
 			return;
 		}
@@ -231,6 +404,9 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 		setShowConsole(true);
 		setConsoleOutput([{ type: "info", message: `Submitting ${selectedLanguage.toUpperCase()} solution...` }]);
 
+		let results: TestResult[] | null = null;
+		let submissionError: string | null = null;
+
 		try {
 			const response = await fetch("/api/execute", {
 				method: "POST",
@@ -238,66 +414,90 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 				body: JSON.stringify({
 					language: selectedLanguage,
 					code: currentCode,
-					testCases: problem.testCases,
+					testCases: testCases,
 					problemSlug: problemSlug
 				})
 			});
 
-			const data = await response.json();
-
-			if (data.error) {
-				setConsoleOutput([{ type: "error", message: data.error }]);
-				toast.error("Submission failed");
-			} else {
-				const results = data.results as TestResult[];
-				setTestResults(results);
-
-				const passedCount = results.filter(r => r.passed).length;
-				const totalCount = results.length;
-				const allPassed = passedCount === totalCount;
-
-				if (allPassed) {
-					setConsoleOutput([{ type: "success", message: `Accepted! All ${totalCount} test cases passed.` }]);
-					toast.success("Congratulations! Solution accepted!", { position: "top-center", autoClose: 3000 });
-					setSuccess(true);
-					setSolved(true);
-				} else {
-					const failed = results.find(r => !r.passed);
-					setConsoleOutput([{ type: "error", message: `Wrong Answer! ${passedCount}/${totalCount} test cases passed. Failed on test case ${failed?.testCase}` }]);
-					toast.error(`Wrong Answer: ${passedCount}/${totalCount} passed`, { position: "top-center", autoClose: 2000 });
+			if (response.ok) {
+				const data = await response.json();
+				if (data.results) {
+					results = data.results as TestResult[];
+				} else if (data.error) {
+					submissionError = data.error;
 				}
+			} else {
+				const errData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+				submissionError = errData.error || `HTTP ${response.status}`;
+			}
+		} catch (err: any) {
+			submissionError = err.message || "Network error";
+		}
 
-				// Record submission in database
+		// Client-side fallback for JavaScript
+		if (!results && selectedLanguage === "javascript") {
+			try {
+				results = runClientSideJS(currentCode, testCases);
+				submissionError = null;
+			} catch (fallbackErr: any) {
+				submissionError = fallbackErr.message || "Client execution failed";
+			}
+		}
+
+		if (results) {
+			setTestResults(results);
+			const passedCount = results.filter(r => r.passed).length;
+			const totalCount = results.length;
+			const allPassed = passedCount === totalCount;
+
+			if (allPassed) {
+				setConsoleOutput([{ type: "success", message: `Accepted! All ${totalCount} test cases passed.` }]);
+				toast.success("Congratulations! Solution accepted!", { position: "top-center", autoClose: 3000 });
+				setSuccess(true);
+				setSolved(true);
+			} else {
+				const failed = results.find(r => !r.passed);
+				setConsoleOutput([{ type: "error", message: `Wrong Answer! ${passedCount}/${totalCount} test cases passed. Failed on test case ${failed?.testCase}` }]);
+				toast.error(`Wrong Answer: ${passedCount}/${totalCount} passed`, { position: "top-center", autoClose: 2000 });
+			}
+
+			// Record submission in database
+			try {
 				const visitorId = localStorage.getItem("visitorId") || "anonymous";
 				await fetch("/api/submissions", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
 						userId: visitorId,
-						problemId: problem.id,
+						problemId: currentProblem?.id || currentProblem?.slug || problemSlug,
 						language: selectedLanguage,
 						code: currentCode,
 						status: allPassed ? "Accepted" : "Wrong Answer",
 						passedCount,
 						totalCount,
-						runtime: allPassed ? Math.floor(Math.random() * 100) + 20 : null,
-						memory: allPassed ? Math.floor(Math.random() * 50) + 10 : null,
+						runtime: allPassed ? Math.floor(Math.random() * 80) + 15 : null,
+						memory: allPassed ? Math.floor(Math.random() * 40) + 10 : null,
 					})
 				});
+			} catch {
+				// Non-blocking if offline or database error
 			}
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : "Submission failed";
-			setConsoleOutput([{ type: "error", message: errorMessage }]);
-			toast.error("Failed to submit solution");
-		} finally {
-			setIsRunning(false);
+		} else {
+			setConsoleOutput([{ type: "error", message: submissionError || "Submission failed" }]);
+			toast.error(submissionError || "Failed to submit solution");
 		}
+
+		setIsRunning(false);
 	};
 
 	const languageExtension = useMemo(() => getLanguageExtension(selectedLanguage), [selectedLanguage]);
 
-	if (isLoading) {
-		return <div className="flex items-center justify-center h-full text-white">Loading...</div>;
+	if (isLoading && !currentProblem) {
+		return <div className="flex items-center justify-center h-full text-white">Loading problem...</div>;
+	}
+
+	if (!currentProblem) {
+		return <div className="flex items-center justify-center h-full text-white">Problem not found</div>;
 	}
 
 	return (
@@ -341,7 +541,7 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 					{!showConsole ? (
 						<div className='flex flex-col'>
 							<div className='flex gap-2 mt-2 flex-wrap'>
-								{problem?.testCases?.map((_, index: number) => (
+								{currentProblem?.testCases?.map((_, index: number) => (
 									<div
 										className={`font-medium items-center transition-all focus:outline-none inline-flex bg-dark-fill-3 hover:bg-dark-fill-2 relative rounded-lg px-4 py-1 cursor-pointer whitespace-nowrap ${
 											activeTestCaseId === index ? "text-white" : "text-gray-500"
@@ -362,17 +562,17 @@ const Playground: React.FC<PlaygroundProps> = ({ problemSlug, setSuccess, setSol
 							<div className='font-semibold my-4'>
 								<p className='text-sm font-medium mt-4 text-white'>Input:</p>
 								<div className='w-full cursor-text rounded-lg border px-3 py-[10px] bg-dark-fill-3 border-transparent text-white mt-2 font-mono text-sm'>
-									{problem?.testCases && problem.testCases[activeTestCaseId] && (
+									{currentProblem?.testCases && currentProblem.testCases[activeTestCaseId] && (
 										<pre className="whitespace-pre-wrap">
-											{JSON.stringify(problem.testCases[activeTestCaseId].input, null, 2)}
+											{JSON.stringify(currentProblem.testCases[activeTestCaseId].input, null, 2)}
 										</pre>
 									)}
 								</div>
 								<p className='text-sm font-medium mt-4 text-white'>Expected Output:</p>
 								<div className='w-full cursor-text rounded-lg border px-3 py-[10px] bg-dark-fill-3 border-transparent text-white mt-2 font-mono text-sm'>
-									{problem?.testCases && problem.testCases[activeTestCaseId] && (
+									{currentProblem?.testCases && currentProblem.testCases[activeTestCaseId] && (
 										<pre className="whitespace-pre-wrap">
-											{JSON.stringify(problem.testCases[activeTestCaseId].expected, null, 2)}
+											{JSON.stringify(currentProblem.testCases[activeTestCaseId].expected, null, 2)}
 										</pre>
 									)}
 								</div>

@@ -7,6 +7,7 @@ import { TiStarOutline } from "react-icons/ti";
 import { toast } from "react-toastify";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Problem } from "@shared/schema";
+import { getDetailedProblem } from "@/data/problems";
 
 type ProblemDescriptionProps = {
 	problemSlug: string;
@@ -42,10 +43,14 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 	const queryClient = useQueryClient();
 	const visitorId = getVisitorId();
 
+	const fallbackProblem = getDetailedProblem(problemSlug);
+
 	const { data: problem, isLoading, isError, error } = useQuery<Problem>({
 		queryKey: [`/api/problems/${problemSlug}`],
 		enabled: !!problemSlug
 	});
+
+	const currentProblem = (problem || fallbackProblem) as Problem | undefined;
 
 	const { data: interaction, refetch: refetchInteraction } = useQuery<ProblemInteraction>({
 		queryKey: [`/api/problems/${problemSlug}/interaction`, visitorId],
@@ -134,7 +139,7 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 		setUpdating(false);
 	};
 
-	if (isLoading) {
+	if (isLoading && !currentProblem) {
 		return (
 			<div className='bg-dark-layer-1'>
 				<div className='flex h-11 w-full items-center pt-2 bg-dark-layer-2 text-white overflow-x-hidden'>
@@ -162,7 +167,7 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 		);
 	}
 
-	if (isError || !problem) {
+	if (!currentProblem) {
 		return (
 			<div className='bg-dark-layer-1'>
 				<div className='flex h-11 w-full items-center pt-2 bg-dark-layer-2 text-white overflow-x-hidden'>
@@ -206,8 +211,8 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 	const solved = interaction?.solved || false;
 	const likes = interaction?.likes || 0;
 	const dislikes = interaction?.dislikes || 0;
-	const examples: ProblemExample[] = Array.isArray(problem.examples) ? (problem.examples as ProblemExample[]) : [];
-	const constraints: string[] = Array.isArray(problem.constraints) ? (problem.constraints as string[]) : [];
+	const examples: ProblemExample[] = Array.isArray(currentProblem.examples) ? (currentProblem.examples as ProblemExample[]) : [];
+	const constraints: string[] = Array.isArray(currentProblem.constraints) ? (currentProblem.constraints as string[]) : [];
 
 	return (
 		<div className='bg-dark-layer-1'>
@@ -221,13 +226,13 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 				<div className='px-5'>
 					<div className='w-full'>
 						<div className='flex space-x-4'>
-							<div className='flex-1 mr-2 text-lg text-white font-medium'>{problem?.title}</div>
+							<div className='flex-1 mr-2 text-lg text-white font-medium'>{currentProblem.title}</div>
 						</div>
 						<div className='flex items-center mt-3'>
 							<div
-								className={`${getDifficultyColor(problem.difficulty)} inline-block rounded-[21px] px-2.5 py-1 text-xs font-medium capitalize `}
+								className={`${getDifficultyColor(currentProblem.difficulty)} inline-block rounded-[21px] px-2.5 py-1 text-xs font-medium capitalize `}
 							>
-								{problem.difficulty}
+								{currentProblem.difficulty}
 							</div>
 							{(solved || _solved) && (
 								<div className='rounded p-[3px] ml-4 text-lg transition-colors duration-200 text-green-s text-dark-green-s'>
@@ -263,38 +268,46 @@ const ProblemDescription: React.FC<ProblemDescriptionProps> = ({ problemSlug, _s
 						</div>
 
 						<div className='text-white text-sm mt-6'>
-							<div dangerouslySetInnerHTML={{ __html: problem.description }} />
+							{currentProblem.description && (currentProblem.description.includes("<p>") || currentProblem.description.includes("<code>")) ? (
+								<div dangerouslySetInnerHTML={{ __html: currentProblem.description }} />
+							) : (
+								<div className='whitespace-pre-line leading-relaxed text-gray-200'>{currentProblem.description}</div>
+							)}
 						</div>
 
-						<div className='mt-4'>
-							{examples.map((example: ProblemExample, index: number) => (
-								<div key={index}>
-									<p className='font-medium text-white '>Example {index + 1}: </p>
-									<div className='example-card'>
-										<pre>
-											<strong className='text-white'>Input: </strong> {example.input}
-											<br />
-											<strong>Output:</strong>
-											{example.output} <br />
-											{example.explanation && (
-												<>
-													<strong>Explanation:</strong> {example.explanation}
-												</>
-											)}
-										</pre>
+						{examples.length > 0 && (
+							<div className='mt-4'>
+								{examples.map((example: ProblemExample, index: number) => (
+									<div key={index}>
+										<p className='font-medium text-white '>Example {index + 1}: </p>
+										<div className='example-card'>
+											<pre>
+												<strong className='text-white'>Input: </strong> {example.input}
+												<br />
+												<strong>Output:</strong>
+												{example.output} <br />
+												{example.explanation && (
+													<>
+														<strong>Explanation:</strong> {example.explanation}
+													</>
+												)}
+											</pre>
+										</div>
 									</div>
-								</div>
-							))}
-						</div>
-
-						<div className='my-8 pb-4'>
-							<div className='text-white text-sm font-medium'>Constraints:</div>
-							<ul className='text-white ml-5 list-disc '>
-								{constraints.map((constraint, index) => (
-									<li key={index}>{constraint}</li>
 								))}
-							</ul>
-						</div>
+							</div>
+						)}
+
+						{constraints.length > 0 && (
+							<div className='my-8 pb-4'>
+								<div className='text-white text-sm font-medium'>Constraints:</div>
+								<ul className='text-white ml-5 list-disc '>
+									{constraints.map((constraint, index) => (
+										<li key={index}>{constraint}</li>
+									))}
+								</ul>
+							</div>
+						)}
 					</div>
 				</div>
 			</div>
