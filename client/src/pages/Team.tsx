@@ -46,18 +46,18 @@ const teamMembers: TeamMember[] = [
     ]
   },
   {
-    name: "Kacha Yash",
-    role: "Co-Developer & Core Contributor",
-    tagline: "Computer Engineering • Software Development • Problem Solving",
+    name: "Yash Kacha",
+    role: "Data Analyst & Co-Developer",
+    tagline: "Data Analytics • Artificial Intelligence • Business Intelligence",
     avatarGradient: "from-dark-pink via-purple-500 to-indigo-500",
-    initials: "KY",
+    initials: "YK",
     linkedin: "https://www.linkedin.com/in/yashkacha07?utm_source=share_via&utm_content=profile&utm_medium=member_android",
-    skills: ["Computer Engineering", "Software Engineering", "Web Development", "Algorithms"],
+    skills: ["Python", "SQL", "Power BI", "Tableau", "Microsoft Excel", "Data Analytics", "Data Visualization", "EDA", "Dashboards"],
     bio: [
-      "Yash Kacha is a Computer Engineering student and co-developer of Code-Hunger. He collaborates on core features, architecture development, and competitive programming workflows.",
-      "Additional background and project achievements are currently being updated. Connect on LinkedIn to follow his latest work and professional updates."
-    ],
-    isPendingInfo: true
+      "Yash Kacha is a Computer Engineering student with a strong interest in Data Analytics and Artificial Intelligence. He is building a solid foundation in Python, SQL, Microsoft Excel, Power BI, Tableau, and data visualization, with a focus on using data to solve practical problems.",
+      "Through his academic learning, certifications, and hands-on projects, Yash has developed practical experience in data cleaning, data processing, data analysis, exploratory data analysis, and dashboard development. His projects include an Excel-based Sales Data Analysis Dashboard. He has also completed a Data Analytics Job Simulation with Deloitte through Forage and other professional learning programs.",
+      "Yash is a motivated and adaptable learner who enjoys working with data, finding useful insights, and continuously improving his technical skills. His professional goal is to start his career in Data Analytics and gradually grow and gaining real-world experience through internships and meaningful projects while contributing to data-driven solutions."
+    ]
   }
 ];
 
